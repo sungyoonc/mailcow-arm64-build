@@ -1,0 +1,108 @@
+name: Docker build mailcow images
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          echo "tag=$(git ls-remote --refs --tags https://github.com/mailcow/mailcow-dockerized.git|cut --delimiter='/' --fields=3|sort --version-sort|tail --lines=1)" >> $GITHUB_ENV
+        shell: bash
+
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: mailcow
+          key: ${{ runner.os }}-v1-${{ env.tag }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          platforms: arm64
+
+      - name: Check Out Repo
+        uses: actions/checkout@v3
+
+      - name: Check Out Repo mailcow/mailcow-dockerized
+        uses: actions/checkout@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          repository: 'mailcow/mailcow-dockerized'
+          ref: '${{ env.tag }}'
+          path: 'mailcow-git'
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          version: latest
+
+      - name: Set up build timestamp
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "timestamp=$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Build and push rspamd
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: docker_build_rspamd
+        uses: docker/build-push-action@v3
+        with:
+          context: ./mailcow-git/data/Dockerfiles/rspamd
+          file: ./mailcow-git/data/Dockerfiles/rspamd/Dockerfile
+          platforms: linux/arm64/v8
+          push: true
+          tags: ghcr.io/winterolym/rspamd-mailcowarm64:latest, ghcr.io/winterolym/rspamd-mailcowarm64:${{ env.tag }}-${{ env.timestamp }}
+
+      # Fixes building issue but might break things...
+      - name: Edit dovecot Dockerfile
+        id: edit-dovecot-dockerfile
+        run: |
+          sed -i 's/dovecot-lua//gI' ./mailcow-git/data/Dockerfiles/dovecot/Dockerfile
+        shell: bash
+
+      - name: Build and push dovecot
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: docker_build_dovecot
+        uses: docker/build-push-action@v3
+        with:
+          context: ./mailcow-git/data/Dockerfiles/dovecot
+          file: ./mailcow-git/data/Dockerfiles/dovecot/Dockerfile
+          platforms: linux/arm64/v8
+          push: true
+          tags: ghcr.io/winterolym/dovecot-mailcowarm64:latest, ghcr.io/winterolym/dovecot-mailcowarm64:${{ env.tag }}-${{ env.timestamp }}
+
+      # Fixes building issue but might break things (Removed sogo-activesync)
+      - name: Edit sogo Dockerfile
+        id: edit-sogo-dockerfile
+        run: |
+          sed -i 's/sogo-activesync//gI' ./mailcow-git/data/Dockerfiles/sogo/Dockerfile
+        shell: bash
+
+      - name: Build and push sogo
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: docker_build_sogo
+        uses: docker/build-push-action@v3
+        with:
+          context: ./mailcow-git/data/Dockerfiles/sogo
+          file: ./mailcow-git/data/Dockerfiles/sogo/Dockerfile
+          platforms: linux/arm64/v8
+          push: true
+          tags: ghcr.io/winterolym/sogo-mailcowarm64:latest, ghcr.io/winterolym/sogo-mailcowarm64:${{ env.tag }}-${{ env.timestamp }}
