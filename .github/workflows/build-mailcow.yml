@@ -73,6 +73,7 @@ jobs:
 
       # Fixes building issue but might break things...
       - name: Edit dovecot Dockerfile
+        if: steps.cache.outputs.cache-hit != 'true'
         id: edit-dovecot-dockerfile
         run: |
           sed -i 's/dovecot-lua//gI' ./mailcow-git/data/Dockerfiles/dovecot/Dockerfile
@@ -91,6 +92,7 @@ jobs:
 
       # Fixes building issue but might break things (Removed sogo-activesync)
       - name: Edit sogo Dockerfile
+        if: steps.cache.outputs.cache-hit != 'true'
         id: edit-sogo-dockerfile
         run: |
           sed -i 's/sogo-activesync//gI' ./mailcow-git/data/Dockerfiles/sogo/Dockerfile
